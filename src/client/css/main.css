@@ -44,6 +44,23 @@ div {
     border: none;
 }
 
+#score {
+    position: absolute;
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.4);
+    color: #FFF;
+    font-size: 20px;
+    top: 10px;
+    left: 10px;
+    font-weight: bold;
+    z-index: 1;
+}
+
+#score #scoreValue {
+    font-size: 20px;
+    color: #FFD700;
+}
+
 #status {
     position: absolute;
     padding: 10px;

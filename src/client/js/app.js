@@ -368,6 +368,9 @@ function gameLoop() {
         });
         render.drawCells(global.cellsToDrawRefs, playerConfig, global.toggleMassState, borders, graph);
 
+        // Update score display
+        document.getElementById('scoreValue').textContent = player.massTotal || 0;
+
         socket.emit('0', window.canvas.target); // playerSendTarget "Heartbeat".
     }
 }
