@@ -9,7 +9,7 @@ const SAT = require('sat');
 
 const gameLogic = require('./game-logic');
 const loggingRepositry = require('./repositories/logging-repository');
-const chatRepository = require('./repositories/chat-repository');
+
 const config = require('../../config');
 const util = require('./lib/util');
 const mapUtils = require('./map/map');
@@ -99,23 +99,6 @@ const addPlayer = (socket) => {
         map.players.removePlayerByID(currentPlayer.id);
         console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
         socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
-    });
-
-    socket.on('playerChat', (data) => {
-        var _sender = data.sender.replace(/(<([^>]+)>)/ig, '');
-        var _message = data.message.replace(/(<([^>]+)>)/ig, '');
-
-        if (config.logChat === 1) {
-            console.log('[CHAT] [' + (new Date()).getHours() + ':' + (new Date()).getMinutes() + '] ' + _sender + ': ' + _message);
-        }
-
-        socket.broadcast.emit('serverSendPlayerChat', {
-            sender: currentPlayer.name,
-            message: _message.substring(0, 35)
-        });
-
-        chatRepository.logChatMessage(_sender, _message, currentPlayer.ipAddress)
-            .catch((err) => console.error("Error when attempting to log chat message", err));
     });
 
     socket.on('pass', async (data) => {

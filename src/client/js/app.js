@@ -1,6 +1,6 @@
 var io = require('socket.io-client');
 var render = require('./render');
-var ChatClient = require('./chat-client');
+
 var Canvas = require('./canvas');
 var global = require('./global');
 
@@ -33,8 +33,7 @@ function startGame(type) {
     if (!global.animLoopHandle)
         animloop();
     socket.emit('respawn');
-    window.chat.socket = socket;
-    window.chat.registerFunctions();
+
     window.canvas.socket = socket;
     global.socket = socket;
 }
@@ -121,7 +120,7 @@ var target = { x: player.x, y: player.y };
 global.target = target;
 
 window.canvas = new Canvas();
-window.chat = new ChatClient();
+
 
 var visibleBorderSetting = document.getElementById('visBord');
 visibleBorderSetting.onchange = settings.toggleBorder;
@@ -161,7 +160,6 @@ function setupSocket(socket) {
     socket.on('pongcheck', function () {
         var latency = Date.now() - global.startPingTime;
         debug('Latency: ' + latency + 'ms');
-        window.chat.addSystemLine('Ping: ' + latency + 'ms');
     });
 
     // Handle error.
@@ -176,35 +174,15 @@ function setupSocket(socket) {
         player.screenHeight = global.screen.height;
         player.target = window.canvas.target;
         global.player = player;
-        window.chat.player = player;
         socket.emit('gotit', player);
         global.gameStart = true;
-        window.chat.addSystemLine('Connected to the game!');
-        window.chat.addSystemLine('Type <b>-help</b> for a list of commands.');
-        if (global.mobile) {
-            document.getElementById('gameAreaWrapper').removeChild(document.getElementById('chatbox'));
-        }
         c.focus();
         global.game.width = gameSizes.width;
         global.game.height = gameSizes.height;
         resize();
     });
 
-    socket.on('playerDied', (data) => {
-        const player = isUnnamedCell(data.playerEatenName) ? 'An unnamed cell' : data.playerEatenName;
-        //const killer = isUnnamedCell(data.playerWhoAtePlayerName) ? 'An unnamed cell' : data.playerWhoAtePlayerName;
 
-        //window.chat.addSystemLine('{GAME} - <b>' + (player) + '</b> was eaten by <b>' + (killer) + '</b>');
-        window.chat.addSystemLine('{GAME} - <b>' + (player) + '</b> was eaten');
-    });
-
-    socket.on('playerDisconnect', (data) => {
-        window.chat.addSystemLine('{GAME} - <b>' + (isUnnamedCell(data.name) ? 'An unnamed cell' : data.name) + '</b> disconnected.');
-    });
-
-    socket.on('playerJoin', (data) => {
-        window.chat.addSystemLine('{GAME} - <b>' + (isUnnamedCell(data.name) ? 'An unnamed cell' : data.name) + '</b> joined.');
-    });
 
     socket.on('leaderboard', (data) => {
         leaderboard = data.leaderboard;
@@ -228,12 +206,7 @@ function setupSocket(socket) {
     });
 
     socket.on('serverMSG', function (data) {
-        window.chat.addSystemLine(data);
-    });
-
-    // Chat.
-    socket.on('serverSendPlayerChat', function (data) {
-        window.chat.addChatLine(data.sender, data.message, false);
+        console.log('[SERVER] ' + data);
     });
 
     // Handle movement.
