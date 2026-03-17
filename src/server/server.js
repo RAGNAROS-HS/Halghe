@@ -219,12 +219,14 @@ const tickPlayer = (currentPlayer) => {
 
     currentPlayer.move(config.slowBase, config.gameWidth, config.gameHeight, INIT_MASS_LOG);
 
-    const isEntityInsideCircle = (point, circle) => {
-        return SAT.pointInCircle(new Vector(point.x, point.y), circle);
+    const isEntityInsideCircle = (point, circleX, circleY, circleRadius) => {
+        const dx = point.x - circleX;
+        const dy = point.y - circleY;
+        return (dx * dx + dy * dy) <= (circleRadius * circleRadius);
     };
 
-    const canEatMass = (cell, cellCircle, cellIndex, mass) => {
-        if (isEntityInsideCircle(mass, cellCircle)) {
+    const canEatMass = (cell, cellX, cellY, cellRadius, cellIndex, mass) => {
+        if (isEntityInsideCircle(mass, cellX, cellY, cellRadius)) {
             if (mass.id === currentPlayer.id && mass.speed > 0 && cellIndex === mass.num)
                 return false;
             if (cell.mass > mass.mass * 1.1)
@@ -234,19 +236,17 @@ const tickPlayer = (currentPlayer) => {
         return false;
     };
 
-    const canEatVirus = (cell, cellCircle, virus) => {
-        return virus.mass < cell.mass && isEntityInsideCircle(virus, cellCircle)
+    const canEatVirus = (cell, cellX, cellY, cellRadius, virus) => {
+        return virus.mass < cell.mass && isEntityInsideCircle(virus, cellX, cellY, cellRadius)
     }
 
     const cellsToSplit = [];
     for (let cellIndex = 0; cellIndex < currentPlayer.cells.length; cellIndex++) {
         const currentCell = currentPlayer.cells[cellIndex];
 
-        const cellCircle = currentCell.toCircle();
-
-        const eatenFoodIndexes = util.getIndexes(map.food.data, food => isEntityInsideCircle(food, cellCircle));
-        const eatenMassIndexes = util.getIndexes(map.massFood.data, mass => canEatMass(currentCell, cellCircle, cellIndex, mass));
-        const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, cellCircle, virus));
+        const eatenFoodIndexes = util.getIndexes(map.food.data, food => isEntityInsideCircle(food, currentCell.x, currentCell.y, currentCell.radius));
+        const eatenMassIndexes = util.getIndexes(map.massFood.data, mass => canEatMass(currentCell, currentCell.x, currentCell.y, currentCell.radius, cellIndex, mass));
+        const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, currentCell.x, currentCell.y, currentCell.radius, virus));
 
         if (eatenVirusIndexes.length > 0) {
             cellsToSplit.push(cellIndex);

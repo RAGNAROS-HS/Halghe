@@ -280,11 +280,11 @@ function setupSocket(socket) {
 
 const isUnnamedCell = (name) => name.length < 1;
 
+const cachedPosition = { x: 0, y: 0 };
 const getPosition = (entity, player, screen) => {
-    return {
-        x: entity.x - player.x + screen.width / 2,
-        y: entity.y - player.y + screen.height / 2
-    }
+    cachedPosition.x = entity.x - player.x + screen.width / 2;
+    cachedPosition.y = entity.y - player.y + screen.height / 2;
+    return cachedPosition;
 }
 
 window.requestAnimFrame = (function () {
@@ -337,26 +337,37 @@ function gameLoop() {
             render.drawBorder(borders, graph);
         }
 
-        var cellsToDraw = [];
+        if (!global.cellsToDrawPool) global.cellsToDrawPool = [];
+        if (!global.cellsToDrawRefs) global.cellsToDrawRefs = [];
+        
+        var cellDrawCount = 0;
         for (var i = 0; i < users.length; i++) {
             let color = 'hsl(' + users[i].hue + ', 100%, 50%)';
             let borderColor = 'hsl(' + users[i].hue + ', 100%, 45%)';
             for (var j = 0; j < users[i].cells.length; j++) {
-                cellsToDraw.push({
-                    color: color,
-                    borderColor: borderColor,
-                    mass: users[i].cells[j].mass,
-                    name: users[i].name,
-                    radius: users[i].cells[j].radius,
-                    x: users[i].cells[j].x - player.x + global.screen.width / 2,
-                    y: users[i].cells[j].y - player.y + global.screen.height / 2
-                });
+                if (!global.cellsToDrawPool[cellDrawCount]) {
+                    global.cellsToDrawPool[cellDrawCount] = {};
+                }
+                let cellData = global.cellsToDrawPool[cellDrawCount++];
+                cellData.color = color;
+                cellData.borderColor = borderColor;
+                cellData.mass = users[i].cells[j].mass;
+                cellData.name = users[i].name;
+                cellData.radius = users[i].cells[j].radius;
+                cellData.x = users[i].cells[j].x - player.x + global.screen.width / 2;
+                cellData.y = users[i].cells[j].y - player.y + global.screen.height / 2;
             }
         }
-        cellsToDraw.sort(function (obj1, obj2) {
+        
+        global.cellsToDrawRefs.length = cellDrawCount;
+        for (let k = 0; k < cellDrawCount; k++) {
+            global.cellsToDrawRefs[k] = global.cellsToDrawPool[k];
+        }
+        
+        global.cellsToDrawRefs.sort(function (obj1, obj2) {
             return obj1.mass - obj2.mass;
         });
-        render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, borders, graph);
+        render.drawCells(global.cellsToDrawRefs, playerConfig, global.toggleMassState, borders, graph);
 
         socket.emit('0', window.canvas.target); // playerSendTarget "Heartbeat".
     }

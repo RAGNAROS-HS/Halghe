@@ -109,14 +109,25 @@ exports.removeNulls = function (inputArray) {
 }
 
 // Removes elements from `inputArray` whose indexes are in the `indexes` array.
-// Leaves the original array unchanged, and returns the result.
+// Modifies the original array to achieve O(1) performance via swap-and-pop.
+// Leaves the remaining elements unordered.
 exports.removeIndexes = function (inputArray, indexes) {
-    let nullified = inputArray;
-    for (let index of indexes) {
-        nullified[index] = null;
-    }
+    if (!indexes || indexes.length === 0) return inputArray;
 
-    return exports.removeNulls(nullified);
+    // Sort indexes in descending order so that swapping and popping doesn't affect the indices of elements we have yet to process
+    let sortedIndexes = indexes.slice().sort((a, b) => b - a);
+
+    for (let i = 0; i < sortedIndexes.length; i++) {
+        let indexToRemove = sortedIndexes[i];
+        if (indexToRemove >= 0 && indexToRemove < inputArray.length) {
+            let lastIndex = inputArray.length - 1;
+            if (indexToRemove !== lastIndex) {
+                inputArray[indexToRemove] = inputArray[lastIndex]; // Swap with the last element
+            }
+            inputArray.pop(); // Remove the last element
+        }
+    }
+    return inputArray;
 }
 
 // Checks if the two rectangles are colliding
@@ -139,10 +150,11 @@ exports.testSquareRectangle =
     }
 
 exports.getIndexes = (array, predicate) => {
-    return array.reduce((acc, value, index) => {
-        if (predicate(value)) {
-            acc.push(index)
+    let result = [];
+    for (let i = 0; i < array.length; i++) {
+        if (predicate(array[i])) {
+            result.push(i);
         }
-        return acc;
-    }, []);
+    }
+    return result;
 }
