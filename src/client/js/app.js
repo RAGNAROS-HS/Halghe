@@ -364,6 +364,12 @@ function gameLoop() {
         for (var i = 0; i < users.length; i++) {
             let color = 'hsl(' + users[i].hue + ', 100%, 50%)';
             let borderColor = 'hsl(' + users[i].hue + ', 100%, 45%)';
+            // For the player's own cells, use the raw server position as reference
+            // so they stay anchored to screen center (cell coords match serverX/Y frame).
+            // Other players use the lerped camera for smooth world scrolling.
+            let isOwn = users[i].id === player.id;
+            let refX = isOwn ? player.serverX : player.x;
+            let refY = isOwn ? player.serverY : player.y;
             for (var j = 0; j < users[i].cells.length; j++) {
                 if (!global.cellsToDrawPool[cellDrawCount]) {
                     global.cellsToDrawPool[cellDrawCount] = {};
@@ -374,8 +380,8 @@ function gameLoop() {
                 cellData.mass = users[i].cells[j].mass;
                 cellData.name = users[i].name;
                 cellData.radius = users[i].cells[j].radius;
-                cellData.x = users[i].cells[j].x - player.x + halfW;
-                cellData.y = users[i].cells[j].y - player.y + halfH;
+                cellData.x = users[i].cells[j].x - refX + halfW;
+                cellData.y = users[i].cells[j].y - refY + halfH;
             }
         }
         
