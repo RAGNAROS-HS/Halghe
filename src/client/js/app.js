@@ -239,8 +239,14 @@ function setupSocket(socket) {
     // Handle movement.
     socket.on('serverTellPlayerMove', function (playerData, userData, foodsList, massList, virusList) {
         if (global.playerType == 'player') {
-            player.x = playerData.x;
-            player.y = playerData.y;
+            // On first update, snap position directly so we don't lerp from a stale origin
+            if (player.serverX === undefined) {
+                player.x = playerData.x;
+                player.y = playerData.y;
+            }
+            // Store server-authoritative position; rendering lerps toward these each frame
+            player.serverX = playerData.x;
+            player.serverY = playerData.y;
             player.hue = playerData.hue;
             player.massTotal = playerData.massTotal;
             player.cells = playerData.cells;
@@ -254,6 +260,7 @@ function setupSocket(socket) {
     // Death.
     socket.on('RIP', function () {
         global.gameStart = false;
+        player.serverX = undefined; // Reset so next respawn snaps to the new position
         render.drawErrorMessage('You died!', graph, global.screen);
         window.setTimeout(() => {
             document.getElementById('gameAreaWrapper').style.opacity = 0;
@@ -281,9 +288,9 @@ function setupSocket(socket) {
 const isUnnamedCell = (name) => name.length < 1;
 
 const cachedPosition = { x: 0, y: 0 };
-const getPosition = (entity, player, screen) => {
-    cachedPosition.x = entity.x - player.x + screen.width / 2;
-    cachedPosition.y = entity.y - player.y + screen.height / 2;
+const getPosition = (entity, player, halfW, halfH) => {
+    cachedPosition.x = entity.x - player.x + halfW;
+    cachedPosition.y = entity.y - player.y + halfH;
     return cachedPosition;
 }
 
@@ -307,32 +314,45 @@ function animloop() {
     gameLoop();
 }
 
+// Interpolation factor: 0.1 = very smooth (more lag), 0.4 = snappier (slight jitter)
+const CAMERA_LERP = 0.2;
+
 function gameLoop() {
     if (global.gameStart) {
+        // Lerp rendered position toward server-authoritative position each frame.
+        // This smooths out the discrete jumps that occur at the server tick rate.
+        if (player.serverX !== undefined) {
+            player.x += (player.serverX - player.x) * CAMERA_LERP;
+            player.y += (player.serverY - player.y) * CAMERA_LERP;
+        }
+
         graph.fillStyle = global.backgroundColor;
         graph.fillRect(0, 0, global.screen.width, global.screen.height);
 
-        render.drawGrid(global, player, global.screen, graph);
+        // Cache half-dimensions once per frame to avoid per-entity division
+        const halfW = global.screen.width / 2;
+        const halfH = global.screen.height / 2;
+
+        // render.drawGrid(global, player, global.screen, graph);
         foods.forEach(food => {
-            let position = getPosition(food, player, global.screen);
+            let position = getPosition(food, player, halfW, halfH);
             render.drawFood(position, food, graph);
         });
         fireFood.forEach(fireFood => {
-            let position = getPosition(fireFood, player, global.screen);
+            let position = getPosition(fireFood, player, halfW, halfH);
             render.drawFireFood(position, fireFood, playerConfig, graph);
         });
         viruses.forEach(virus => {
-            let position = getPosition(virus, player, global.screen);
+            let position = getPosition(virus, player, halfW, halfH);
             render.drawVirus(position, virus, graph);
         });
 
-
-        let borders = { // Position of the borders on the screen
-            left: global.screen.width / 2 - player.x,
-            right: global.screen.width / 2 + global.game.width - player.x,
-            top: global.screen.height / 2 - player.y,
-            bottom: global.screen.height / 2 + global.game.height - player.y
-        }
+        let borders = {
+            left: halfW - player.x,
+            right: halfW + global.game.width - player.x,
+            top: halfH - player.y,
+            bottom: halfH + global.game.height - player.y
+        };
         if (global.borderDraw) {
             render.drawBorder(borders, graph);
         }
@@ -354,8 +374,8 @@ function gameLoop() {
                 cellData.mass = users[i].cells[j].mass;
                 cellData.name = users[i].name;
                 cellData.radius = users[i].cells[j].radius;
-                cellData.x = users[i].cells[j].x - player.x + global.screen.width / 2;
-                cellData.y = users[i].cells[j].y - player.y + global.screen.height / 2;
+                cellData.x = users[i].cells[j].x - player.x + halfW;
+                cellData.y = users[i].cells[j].y - player.y + halfH;
             }
         }
         

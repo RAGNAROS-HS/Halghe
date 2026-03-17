@@ -77,7 +77,6 @@ class Canvas {
 
     // Updates the target according to the directions in the directions array.
     updateTarget(list) {
-    	this.target = { x : 0, y: 0 };
     	var directionHorizontal = 0;
     	var directionVertical = 0;
     	for (var i = 0, len = list.length; i < len; i++) {
@@ -90,9 +89,9 @@ class Canvas {
     			else if (list[i] == global.KEY_DOWN) directionVertical += Number.MAX_VALUE;
     		}
     	}
-    	this.target.x += directionHorizontal;
-    	this.target.y += directionVertical;
-        global.target = this.target;
+    	// Mutate in-place so existing references (player.target, global.target) stay valid
+    	this.target.x = directionHorizontal;
+    	this.target.y = directionVertical;
     }
 
     directional(key) {
