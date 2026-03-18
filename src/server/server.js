@@ -26,6 +26,10 @@ let leaderboardChanged = false;
 
 const Vector = SAT.Vector;
 
+app.use(express.json());
+const rlApi = require('./rl-api');
+app.use('/rl', rlApi);
+
 app.use(express.static(__dirname + '/../client'));
 
 io.on('connection', function (socket) {
