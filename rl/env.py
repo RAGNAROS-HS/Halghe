@@ -15,6 +15,8 @@ import gymnasium
 from gymnasium import spaces
 import numpy as np
 import requests
+import pygame
+
 
 
 class HalgheEnv(gymnasium.Env):
@@ -30,12 +32,13 @@ class HalgheEnv(gymnasium.Env):
         server_url (str): Base URL of the game server (default: http://localhost:3000)
     """
 
-    metadata = {"render_modes": []}
+    metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, server_url="http://localhost:3000"):
+    def __init__(self, server_url="http://localhost:3000", render_mode=None):
         super().__init__()
         self.server_url = server_url.rstrip("/")
         self._session = requests.Session()
+        self.render_mode = render_mode
 
         # Fetch game config from the server so you can use it for normalization
         self.game_config = self._get_config()
@@ -62,6 +65,11 @@ class HalgheEnv(gymnasium.Env):
         )
 
         self._raw_state = None
+        
+        # Pygame rendering state
+        self.window_size = 800
+        self._surface = None
+        self._clock = None
 
     # ------------------------------------------------------------------
     # Gymnasium interface
@@ -96,9 +104,67 @@ class HalgheEnv(gymnasium.Env):
 
         return obs, reward, terminated, truncated, info
 
-    # ------------------------------------------------------------------
-    # YOU FILL THESE IN
-    # ------------------------------------------------------------------
+    def render(self):
+        if self.render_mode != "rgb_array":
+            return None
+            
+        if self._raw_state is None:
+            return None
+
+        # Initialize Pygame surface dynamically
+        if self._surface is None:
+            pygame.init()
+            self._surface = pygame.Surface((self.window_size, self.window_size))
+
+        self._surface.fill((255, 255, 255))  # White background
+
+        # Get map boundaries for coordinate scaling
+        map_w = self._raw_state.get("map", {}).get("width", 5000)
+        map_h = self._raw_state.get("map", {}).get("height", 5000)
+        scale_x = self.window_size / max(map_w, 1)
+        scale_y = self.window_size / max(map_h, 1)
+
+        def draw_circle(color, x, y, radius):
+            pygame.draw.circle(
+                self._surface, 
+                color, 
+                (int(x * scale_x), int(y * scale_y)), 
+                max(1, int(radius * max(scale_x, scale_y)))
+            )
+
+        # Draw Food (Blue)
+        for f in self._raw_state.get("food", []):
+            draw_circle((0, 0, 255), f["x"], f["y"], 5)
+
+        # Draw Mass Food (Cyan)
+        for mf in self._raw_state.get("massFood", []):
+            draw_circle((0, 255, 255), mf["x"], mf["y"], 8)
+
+        # Draw Viruses (Green)
+        for v in self._raw_state.get("viruses", []):
+            draw_circle((0, 255, 0), v["x"], v["y"], v.get("radius", 30))
+
+        # Draw Enemies (Red)
+        for e in self._raw_state.get("enemies", []):
+            for cell in e.get("cells", []):
+                draw_circle((255, 0, 0), cell["x"], cell["y"], cell.get("radius", 10))
+
+        # Draw Player (Black)
+        player = self._raw_state.get("player", {})
+        if player:
+            for cell in player.get("cells", []):
+                draw_circle((0, 0, 0), cell["x"], cell["y"], cell.get("radius", 10))
+
+        # Convert surface to RGB array for Gymnasium RecordVideo
+        return np.transpose(
+            np.array(pygame.surfarray.pixels3d(self._surface)), axes=(1, 0, 2)
+        )
+
+    def close(self):
+        if self._surface is not None:
+            pygame.quit()
+        super().close()
+
 
     def _build_observation(self, raw_state: dict) -> np.ndarray:
         """
@@ -119,9 +185,6 @@ class HalgheEnv(gymnasium.Env):
         # Replace this with your feature engineering (flat vector, grid, raycasting, etc.)
         return np.zeros(self.observation_space.shape, dtype=np.float32)
 
-    # ------------------------------------------------------------------
-    # Action encoding / decoding
-    # ------------------------------------------------------------------
 
     def _decode_action(self, action) -> dict:
         """
