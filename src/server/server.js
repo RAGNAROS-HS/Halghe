@@ -30,6 +30,9 @@ app.use(express.json());
 const rlApi = require('./rl-api');
 app.use('/rl', rlApi);
 
+const rlSocket = require('./rl-socket');
+rlSocket(io);
+
 app.use(express.static(__dirname + '/../client'));
 
 io.on('connection', function (socket) {

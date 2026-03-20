@@ -4,3 +4,5 @@ requests
 tensorflow
 pygame
 moviepy
+python-socketio[client]>=5.11.0
+websocket-client

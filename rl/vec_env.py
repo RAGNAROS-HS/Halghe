@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import requests
 import pygame
+import socketio
 
 class BatchedHalgheEnv(gymnasium.Env):
     """
@@ -23,7 +24,9 @@ class BatchedHalgheEnv(gymnasium.Env):
         super().__init__()
         self.num_agents = num_agents
         self.server_url = server_url.rstrip("/")
-        self._session = requests.Session()
+        self._sio = socketio.Client()
+        # Connect to the /rl namespace
+        self._sio.connect(self.server_url, namespaces=['/rl'])
         self.render_mode = render_mode
 
         # Define action space (4-element continuous vectors)
@@ -47,12 +50,15 @@ class BatchedHalgheEnv(gymnasium.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        resp = self._session.post(
-            f"{self.server_url}/rl/reset_batch", 
-            json={"num_agents": self.num_agents}
+        resp = self._sio.call(
+            'reset_batch',
+            {"num_agents": self.num_agents},
+            namespace='/rl'
         )
-        resp.raise_for_status()
-        data_list = resp.json()
+        if resp.get('status') != 'ok':
+            raise RuntimeError(f"Reset failed: {resp.get('message')}")
+        
+        data_list = resp.get('data', [])
         
         self._raw_states = [d["state"] for d in data_list]
         obs = np.stack([self._build_observation(s) for s in self._raw_states])
@@ -68,12 +74,15 @@ class BatchedHalgheEnv(gymnasium.Env):
         # Decode batched actions
         action_payloads = [self._decode_action(actions[i]) for i in range(self.num_agents)]
         
-        resp = self._session.post(
-            f"{self.server_url}/rl/step_batch",
-            json={"actions": action_payloads},
+        resp = self._sio.call(
+            'step_batch',
+            {"actions": action_payloads},
+            namespace='/rl'
         )
-        resp.raise_for_status()
-        data_list = resp.json()
+        if resp.get('status') != 'ok':
+            raise RuntimeError(f"Step failed: {resp.get('message')}")
+
+        data_list = resp.get('data', [])
 
         self._raw_states = [d["state"] for d in data_list]
         obs = np.stack([self._build_observation(s) for s in self._raw_states])
@@ -155,4 +164,6 @@ class BatchedHalgheEnv(gymnasium.Env):
     def close(self):
         if self._surface is not None:
             pygame.quit()
+        if hasattr(self, '_sio') and self._sio.connected:
+            self._sio.disconnect()
         super().close()
