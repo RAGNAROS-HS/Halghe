@@ -3,6 +3,9 @@ var render = require('./render');
 
 var Canvas = require('./canvas');
 var global = require('./global');
+var GameControls = require('./game-controls');
+
+var gameControls = new GameControls();
 
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
@@ -91,7 +94,6 @@ window.onload = function () {
     });
 };
 
-// TODO: Break out into GameControls.
 
 var playerConfig = {
     border: 6,
@@ -123,16 +125,21 @@ window.canvas = new Canvas();
 
 
 var visibleBorderSetting = document.getElementById('visBord');
-visibleBorderSetting.onchange = settings.toggleBorder;
+visibleBorderSetting.onchange = gameControls.toggleBorder.bind(gameControls);
 
 var showMassSetting = document.getElementById('showMass');
-showMassSetting.onchange = settings.toggleMass;
+showMassSetting.onchange = gameControls.toggleMass.bind(gameControls);
 
 var continuitySetting = document.getElementById('continuity');
-continuitySetting.onchange = settings.toggleContinuity;
+continuitySetting.onchange = gameControls.toggleContinuity.bind(gameControls);
 
 var roundFoodSetting = document.getElementById('roundFood');
-roundFoodSetting.onchange = settings.toggleRoundFood;
+roundFoodSetting.onchange = gameControls.toggleRoundFood.bind(gameControls);
+
+var darkModeSetting = document.getElementById('darkMode');
+if (darkModeSetting) {
+    darkModeSetting.onchange = gameControls.toggleDarkMode.bind(gameControls);
+}
 
 var c = window.canvas.cv;
 var graph = c.getContext('2d');

@@ -1,21 +1,22 @@
 import numpy as np
 import tensorflow as tf
 import gymnasium as gym
-from env import HalgheEnv
+from vec_env import BatchedHalgheEnv
 
 def main():
-    # 1. Initialize the Environment
-    base_env = HalgheEnv(render_mode="rgb_array")
+    # 1. Initialize the Batched Environment
+    num_agents = 100
+    base_env = BatchedHalgheEnv(num_agents=num_agents, render_mode="rgb_array")
     
     # Wrap it to record videos
     env = gym.wrappers.RecordVideo(
         base_env, 
-        video_folder="videos",
+        video_folder="videos/train_runs_batched",
         episode_trigger=lambda ep: ep % 50 == 0 # Record every 50th episode
     )
     
-    # The action space in HalgheEnv is continuous: [dx, dy, split, fire]
-    action_dim = env.action_space.shape[0]
+    # The action space in BatchedHalgheEnv is continuous: [dx, dy, split, fire]
+    action_dim = env.action_space.shape[1]
     
     # ---------------------------------------------------------
     # TODO: Define and initialize your TensorFlow model(s) here

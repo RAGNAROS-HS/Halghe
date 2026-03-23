@@ -6,6 +6,7 @@ class ChatClient {
         this.socket = global.socket;
         this.mobile = global.mobile;
         this.player = global.player;
+        this.gameControls = new (require('./game-controls'))();
         var self = this;
         this.commands = {};
         var input = document.getElementById('chatInput');
@@ -21,7 +22,6 @@ class ChatClient {
         global.chatClient = this;
     }
 
-    // TODO: Break out many of these GameControls into separate classes.
 
     registerFunctions() {
         var self = this;
@@ -30,23 +30,28 @@ class ChatClient {
         });
 
         this.registerCommand('dark', 'Toggle dark mode.', function () {
-            self.toggleDarkMode();
+            self.gameControls.toggleDarkMode();
+            self.addSystemLine('Toggled dark mode.');
         });
 
         this.registerCommand('border', 'Toggle visibility of border.', function () {
-            self.toggleBorder();
+            self.gameControls.toggleBorder();
+            self.addSystemLine('Toggled border.');
         });
 
         this.registerCommand('mass', 'Toggle visibility of mass.', function () {
-            self.toggleMass();
+            self.gameControls.toggleMass();
+            self.addSystemLine('Toggled mass.');
         });
 
         this.registerCommand('continuity', 'Toggle continuity.', function () {
-            self.toggleContinuity();
+            self.gameControls.toggleContinuity();
+            self.addSystemLine('Toggled continuity.');
         });
 
         this.registerCommand('roundfood', 'Toggle food drawing.', function (args) {
-            self.toggleRoundFood(args);
+            self.gameControls.toggleRoundFood(args);
+            self.addSystemLine('Toggled rounded food.');
         });
 
         this.registerCommand('help', 'Information about the chat commands.', function () {
@@ -161,62 +166,7 @@ class ChatClient {
         this.socket.emit('pingcheck');
     }
 
-    toggleDarkMode() {
-        var LIGHT = '#f2fbff',
-            DARK = '#181818';
-        var LINELIGHT = '#000000',
-            LINEDARK = '#ffffff';
 
-        if (global.backgroundColor === LIGHT) {
-            global.backgroundColor = DARK;
-            global.lineColor = LINEDARK;
-            this.addSystemLine('Dark mode enabled.');
-        } else {
-            global.backgroundColor = LIGHT;
-            global.lineColor = LINELIGHT;
-            this.addSystemLine('Dark mode disabled.');
-        }
-    }
-
-    toggleBorder() {
-        if (!global.borderDraw) {
-            global.borderDraw = true;
-            this.addSystemLine('Showing border.');
-        } else {
-            global.borderDraw = false;
-            this.addSystemLine('Hiding border.');
-        }
-    }
-
-    toggleMass() {
-        if (global.toggleMassState === 0) {
-            global.toggleMassState = 1;
-            this.addSystemLine('Viewing mass enabled.');
-        } else {
-            global.toggleMassState = 0;
-            this.addSystemLine('Viewing mass disabled.');
-        }
-    }
-
-    toggleContinuity() {
-        if (!global.continuity) {
-            global.continuity = true;
-            this.addSystemLine('Continuity enabled.');
-        } else {
-            global.continuity = false;
-            this.addSystemLine('Continuity disabled.');
-        }
-    }
-
-    toggleRoundFood(args) {
-        if (args || global.foodSides < 10) {
-            global.foodSides = (args && !isNaN(args[0]) && +args[0] >= 3) ? +args[0] : 10;
-            this.addSystemLine('Food is now rounded!');
-        } else {
-            global.foodSides = 5;
-            this.addSystemLine('Food is no longer rounded!');
-        }
-    }
 }
 
 module.exports = ChatClient;

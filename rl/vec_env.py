@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import requests
 import pygame
+from typing import Optional, Tuple, Any, Dict, List
 
 class BatchedHalgheEnv(gymnasium.Env):
     """
@@ -45,7 +46,15 @@ class BatchedHalgheEnv(gymnasium.Env):
         self.window_size = 800
         self._surface = None
 
-    def reset(self, *, seed=None, options=None):
+    def reset(
+        self,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Resets the batched environment to an initial state and returns the initial observation.
+        """
         super().reset(seed=seed)
         resp = self._session.post(
             f"{self.server_url}/rl/reset_batch", 
@@ -64,7 +73,13 @@ class BatchedHalgheEnv(gymnasium.Env):
                 
         return obs, infos
 
-    def step(self, actions):
+    def step(
+        self, actions: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
+        """
+        Run one timestep of the environment's dynamics for all batched agents.
+        Accepts an array of actions and returns arrays of observations, rewards, etc.
+        """
         # Decode batched actions
         action_payloads = [self._decode_action(actions[i]) for i in range(self.num_agents)]
         
@@ -102,7 +117,11 @@ class BatchedHalgheEnv(gymnasium.Env):
             "fire": int(action[3] > 0),
         }
 
-    def render(self):
+    def render(self) -> Optional[np.ndarray]:
+        """
+        Renders the environment to an RGB array visualizing all agents on the board.
+        Returns the rendering as a NumPy array if render_mode is 'rgb_array', else None.
+        """
         if self.render_mode != "rgb_array":
             return None
         if not self._raw_states or self._raw_states[0] is None:
@@ -129,9 +148,12 @@ class BatchedHalgheEnv(gymnasium.Env):
                 max(1, int(radius * max(scale_x, scale_y)))
             )
 
-        for f in raw_state.get("food", []): draw_circle((0, 0, 255), f["x"], f["y"], 5)
-        for mf in raw_state.get("massFood", []): draw_circle((0, 255, 255), mf["x"], mf["y"], 8)
-        for v in raw_state.get("viruses", []): draw_circle((0, 255, 0), v["x"], v["y"], v.get("radius", 30))
+        for f in raw_state.get("food", []):
+            draw_circle((0, 0, 255), f["x"], f["y"], 5)
+        for mf in raw_state.get("massFood", []):
+            draw_circle((0, 255, 255), mf["x"], mf["y"], 8)
+        for v in raw_state.get("viruses", []):
+            draw_circle((0, 255, 0), v["x"], v["y"], v.get("radius", 30))
         for e in raw_state.get("enemies", []):
             for cell in e.get("cells", []):
                 draw_circle((255, 0, 0), cell["x"], cell["y"], cell.get("radius", 10))
