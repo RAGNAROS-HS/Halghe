@@ -3,6 +3,29 @@ import tensorflow as tf
 import gymnasium as gym
 from vec_env import BatchedHalgheEnv
 
+class BatchedFrameSkip(gym.Wrapper):
+    """
+    Frame skipping for batched environments. 
+    Repeats the given action `skip` times, accumulating the batch rewards.
+    """
+    def __init__(self, env, skip=4):
+        super().__init__(env)
+        self.skip = skip
+
+    def step(self, action):
+        num_agents = self.env.action_space.shape[0]
+        total_reward = np.zeros(num_agents, dtype=np.float32)
+        
+        for _ in range(self.skip):
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            total_reward += reward
+            
+            # If the entire batch is terminated, stop early
+            if np.all(terminated):
+                break
+                
+        return obs, total_reward, terminated, truncated, info
+
 class SimpleActor(tf.keras.Model):
     def __init__(self, action_dim):
         super().__init__()
@@ -36,22 +59,27 @@ def main():
     num_agents = 100
     base_env = BatchedHalgheEnv(num_agents=num_agents, render_mode="rgb_array")
     
-    # Wrap it to record videos
+    # Wrap it to record videos (captures EVERY frame out of the base env for smooth video)
     env = gym.wrappers.RecordVideo(
         base_env, 
         video_folder="videos/train_runs_batched",
         episode_trigger=lambda ep: ep % 10 == 0 # Record every 10 eps
     )
     
+    # Apply FrameSkip so the Neural Network only "thinks" every 4 ticks
+    env = BatchedFrameSkip(env, skip=4)
+    
     action_dim = env.action_space.shape[1]
-    obs_dim = env.single_observation_space.shape[0]
+    obs_dim = base_env.single_observation_space.shape[0]
 
     # 2. Init Model and Optimizer (Basic REINFORCE / Policy Gradient implementation)
     model = SimpleActor(action_dim)
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
     
     episodes = 500
-    max_steps = 200 # Limit steps to prevent infinities in an episode
+    # 2000 steps * 4 frame_skip = 8000 server ticks per episode.
+    # At ~40ms per tick, this allows for ~320 seconds (over 5 minutes) of real gameplay per episode!
+    max_steps = 2000 
     
     for ep in range(episodes):
         obs, _ = env.reset() # shape: (num_agents, obs_dim)
