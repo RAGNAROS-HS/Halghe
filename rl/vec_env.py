@@ -34,10 +34,10 @@ class BatchedHalgheEnv(gymnasium.Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(num_agents, 4), dtype=np.float32)
 
         self.single_observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32
         )
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(num_agents, 1), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(num_agents, 5), dtype=np.float32
         )
 
         self._raw_states = None
@@ -107,7 +107,21 @@ class BatchedHalgheEnv(gymnasium.Env):
         return obs, rewards, terminated, truncated, infos
 
     def _build_observation(self, raw_state: dict) -> np.ndarray:
-        return np.zeros(self.single_observation_space.shape, dtype=np.float32)
+        player = raw_state.get("player", {})
+        cells = player.get("cells", [])
+        if not cells:
+            return np.zeros((5,), dtype=np.float32)
+        
+        main_cell = cells[0]
+        # Normalize arbitrarily for POC
+        px = main_cell.get("x", 0) / 5000.0
+        py = main_cell.get("y", 0) / 5000.0
+        pmass = main_cell.get("mass", 0) / 100.0
+        
+        num_food = len(raw_state.get("food", [])) / 100.0
+        num_enemies = len(raw_state.get("enemies", [])) / 10.0
+        
+        return np.array([px, py, pmass, num_food, num_enemies], dtype=np.float32)
 
     def _decode_action(self, action) -> dict:
         return {
