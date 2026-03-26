@@ -74,6 +74,7 @@ router.post('/reset_batch', (req, res) => {
 router.post('/step_batch', (req, res) => {
     try {
         const actions = req.body.actions || [];
+        const skip = Math.max(1, req.body.skip || 1);
         if (actions.length !== games.length) {
             throw new Error(`Expected ${games.length} actions, got ${actions.length}`);
         }
@@ -81,14 +82,20 @@ router.post('/step_batch', (req, res) => {
         const results = [];
         for(let i = 0; i < games.length; i++) {
             if (games[i].done) {
-                // Should not happen if auto-reset works, but just in case
                 games[i].reset();
             }
             
-            const stepData = games[i].step(actions[i]);
+            let stepData = null;
+            let totalReward = 0;
+            for(let s = 0; s < skip; s++) {
+                stepData = games[i].step(actions[i]);
+                totalReward += stepData.reward;
+                if (stepData.done) break;
+            }
+            stepData.reward = totalReward;
             
             // Gymnasium VectorEnv standard auto-reset
-            if (games[i].done) {
+            if (stepData.done) {
                 const terminalState = stepData.state;
                 const terminalInfo = stepData.info;
                 

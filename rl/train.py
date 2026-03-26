@@ -3,29 +3,6 @@ import tensorflow as tf
 import gymnasium as gym
 from vec_env import BatchedHalgheEnv
 
-class BatchedFrameSkip(gym.Wrapper):
-    """
-    Frame skipping for batched environments. 
-    Repeats the given action `skip` times, accumulating the batch rewards.
-    """
-    def __init__(self, env, skip=4):
-        super().__init__(env)
-        self.skip = skip
-
-    def step(self, action):
-        num_agents = self.env.action_space.shape[0]
-        total_reward = np.zeros(num_agents, dtype=np.float32)
-        
-        for _ in range(self.skip):
-            obs, reward, terminated, truncated, info = self.env.step(action)
-            total_reward += reward
-            
-            # If the entire batch is terminated, stop early
-            if np.all(terminated):
-                break
-                
-        return obs, total_reward, terminated, truncated, info
-
 class SimpleActor(tf.keras.Model):
     def __init__(self, action_dim):
         super().__init__()
@@ -57,7 +34,7 @@ def compute_discounted_returns(rewards, gamma=0.99):
 def main():
     # 1. Initialize the Batched Environment
     num_agents = 100
-    base_env = BatchedHalgheEnv(num_agents=num_agents, render_mode="rgb_array")
+    base_env = BatchedHalgheEnv(num_agents=num_agents, render_mode="rgb_array", frame_skip=4)
     
     # Wrap it to record videos (captures EVERY frame out of the base env for smooth video)
     env = gym.wrappers.RecordVideo(
@@ -66,8 +43,7 @@ def main():
         episode_trigger=lambda ep: ep % 10 == 0 # Record every 10 eps
     )
     
-    # Apply FrameSkip so the Neural Network only "thinks" every 4 ticks
-    env = BatchedFrameSkip(env, skip=4)
+    # Apply FrameSkip occurs directly in the Node.js backend to bypass Python HTTP overhead!
     
     action_dim = env.action_space.shape[1]
     obs_dim = base_env.single_observation_space.shape[0]
