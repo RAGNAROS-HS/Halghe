@@ -20,12 +20,13 @@ class BatchedHalgheEnv(gymnasium.Env):
 
     metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, num_agents=100, server_url="http://localhost:3000", render_mode=None):
+    def __init__(self, num_agents=100, server_url="http://localhost:3000", render_mode=None, frame_skip=1):
         super().__init__()
         self.num_agents = num_agents
         self.server_url = server_url.rstrip("/")
         self._session = requests.Session()
         self.render_mode = render_mode
+        self.frame_skip = frame_skip
 
         # Define action space (4-element continuous vectors)
         self.single_action_space = spaces.Box(
@@ -85,7 +86,7 @@ class BatchedHalgheEnv(gymnasium.Env):
         
         resp = self._session.post(
             f"{self.server_url}/rl/step_batch",
-            json={"actions": action_payloads},
+            json={"actions": action_payloads, "skip": self.frame_skip},
         )
         resp.raise_for_status()
         data_list = resp.json()
