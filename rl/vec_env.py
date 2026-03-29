@@ -40,7 +40,7 @@ class BatchedHalgheEnv(gymnasium.Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(num_agents, 4), dtype=np.float32)
 
         self.single_observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(num_agents, 5), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(num_agents, 6), dtype=np.float32)
 
         # Pygame rendering state
         self.window_size = 800
@@ -132,13 +132,12 @@ class BatchedHalgheEnv(gymnasium.Env):
         map_h = render_bg.get("map", {}).get("height", 5000)
         scale_x = self.window_size / max(map_w, 1)
         scale_y = self.window_size / max(map_h, 1)
-        scale = max(scale_x, scale_y)
 
         def draw_circle(color, x, y, radius):
             pygame.draw.circle(
                 self._surface, color,
                 (int(x * scale_x), int(y * scale_y)),
-                max(1, int(radius * scale))
+                max(1, int(radius * scale_x))
             )
 
         for f in render_bg.get("food", []):
