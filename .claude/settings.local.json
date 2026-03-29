@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(node -e \"require\\(''worker_threads''\\); console.log\\(''worker_threads: OK''\\)\")",
+      "Bash(node:*)",
+      "Bash(wc:*)"
+    ],
+    "defaultMode": "auto"
+  }
+}

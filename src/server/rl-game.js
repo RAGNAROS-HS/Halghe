@@ -19,6 +19,7 @@ const { getPosition } = require('./lib/entityUtils');
 
 const INIT_MASS_LOG = util.mathLog(config.defaultPlayerMass, config.slowBase);
 const MAX_STEPS_PER_EPISODE = 3000;
+const PLAYER_ID = 'rl-bot';
 
 class RLGame {
     constructor() {
@@ -43,7 +44,7 @@ class RLGame {
 
         // Create the bot player
         const playerUtils = mapUtils.playerUtils;
-        this.player = new playerUtils.Player('rl-bot');
+        this.player = new playerUtils.Player(PLAYER_ID);
         const radius = util.massToRadius(config.defaultPlayerMass);
         const spawnPos = getPosition(
             config.newPlayerInitialPosition === 'farthest',
@@ -59,7 +60,6 @@ class RLGame {
         this.prevMass = this.player.massTotal;
 
         return {
-            state: this._getState(),
             info: {
                 step: this.stepCount,
                 mass: this.player.massTotal,
@@ -81,9 +81,10 @@ class RLGame {
         const dx = Math.max(-1, Math.min(1, action.dx || 0));
         const dy = Math.max(-1, Math.min(1, action.dy || 0));
 
-        // Convert [-1,1] direction into a target point offset from the player center.
-        // The game's movement system steers towards (player.x + target.x, player.y + target.y),
-        // so we set target to a fixed distance in the desired direction.
+        // player.target is a direction offset — Cell.move() computes:
+        //   direction.x = playerX - cellX + target.x
+        // For a single-cell player playerX == cellX, so target is purely the offset.
+        // This mirrors how the multiplayer client sends screen-relative mouse offsets.
         const MOVE_DISTANCE = 400;
         this.player.target = {
             x: dx * MOVE_DISTANCE,
@@ -110,23 +111,30 @@ class RLGame {
         this._tickPlayer();
         this._tickGame();
 
-        // Rebalance food/viruses (normally runs every 1s = every 60 ticks)
+        // Rebalance food/viruses (normally runs every 1s = every 60 ticks).
+        // Track mass before shrink so passive decay doesn't pollute the reward signal.
+        let decayLoss = 0;
         if (this.stepCount % 60 === 0) {
+            const massBeforeShrink = this.player.massTotal;
             this.map.players.shrinkCells(config.massLossRate, config.defaultPlayerMass, config.minMassLoss);
+            decayLoss = massBeforeShrink - this.player.massTotal;  // always >= 0
             this.map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus);
         }
 
         this.stepCount++;
 
         // --- Compute reward ---
+        // Cancel out passive decay so the agent is only rewarded/penalised for
+        // deliberate actions (eating food, getting eaten), not for the passage of time.
         const currentMass = this.player.massTotal;
-        let reward = currentMass - this.prevMass;
+        let reward = (currentMass - this.prevMass) + decayLoss;
 
         // Check if the bot player died (removed from player list, or no cells left)
-        const botIndex = this.map.players.findIndexByID('rl-bot');
+        const botIndex = this.map.players.findIndexByID(PLAYER_ID);
         if (botIndex === -1 || this.player.cells.length === 0) {
             this.done = true;
-            reward -= 10;
+            // Scale penalty so dying is always a net loss regardless of accumulated mass
+            reward -= Math.max(currentMass * 0.5, 10);
         }
 
         // Episode length limit
@@ -137,7 +145,6 @@ class RLGame {
         this.prevMass = this.done ? 0 : currentMass;
 
         return {
-            state: this.done ? this._getEmptyState() : this._getState(),
             reward,
             done: this.done,
             info: {
@@ -219,35 +226,8 @@ class RLGame {
     }
 
     // ------------------------------------------------------------------
-    // Private: state serialization — raw JSON for the Python side
+    // Private: empty state placeholder returned when agent is dead
     // ------------------------------------------------------------------
-
-    _getState() {
-        const p = this.player;
-        return {
-            player: {
-                x: p.x,
-                y: p.y,
-                massTotal: Math.round(p.massTotal),
-                cells: p.cells.map(c => ({ x: c.x, y: c.y, mass: c.mass, radius: c.radius }))
-            },
-            food: this.map.food.data.map(f => ({ x: f.x, y: f.y })),
-            viruses: this.map.viruses.data.map(v => ({ x: v.x, y: v.y, mass: v.mass, radius: v.radius })),
-            enemies: this.map.players.data
-                .filter(pl => pl.id !== 'rl-bot')
-                .map(pl => ({
-                    x: pl.x,
-                    y: pl.y,
-                    massTotal: Math.round(pl.massTotal),
-                    cells: pl.cells.map(c => ({ x: c.x, y: c.y, mass: c.mass, radius: c.radius }))
-                })),
-            massFood: this.map.massFood.data.map(m => ({ x: m.x, y: m.y, mass: m.mass })),
-            map: {
-                width: config.gameWidth,
-                height: config.gameHeight
-            }
-        };
-    }
 
     _getEmptyState() {
         return {
@@ -259,6 +239,67 @@ class RLGame {
             map: { width: config.gameWidth, height: config.gameHeight }
         };
     }
+
+    // ------------------------------------------------------------------
+    // Efficient observation and render helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns the 5-element observation vector, computed directly on the server
+     * to avoid transmitting the full game state over HTTP.
+     * [px, py, pmass, num_food, num_enemies] — all normalized.
+     */
+    getObservation() {
+        if (this.done || !this.player || this.player.cells.length === 0) {
+            return [0.0, 0.0, 0.0, 0.0, 0.0];
+        }
+        const c = this.player.cells[0];
+        const enemies = this.map.players.data.filter(p => p.id !== PLAYER_ID);
+
+        // Direction to nearest food pellet, normalized by map size
+        let food_dx = 0, food_dy = 0;
+        if (this.map.food.data.length > 0) {
+            let nearest = null, nearestDist = Infinity;
+            for (const f of this.map.food.data) {
+                const d = Math.hypot(f.x - c.x, f.y - c.y);
+                if (d < nearestDist) { nearestDist = d; nearest = f; }
+            }
+            food_dx = (nearest.x - c.x) / config.gameWidth;
+            food_dy = (nearest.y - c.y) / config.gameHeight;
+        }
+
+        return [
+            c.x / config.gameWidth,
+            c.y / config.gameHeight,
+            c.mass / 100.0,
+            food_dx,
+            food_dy,
+            enemies.length / 10.0
+        ];
+    }
+
+    /**
+     * Returns compact cell data for all of this agent's cells.
+     * Used only for rendering — do not call during normal training steps.
+     */
+    getPlayerCells() {
+        if (!this.player || this.player.cells.length === 0) return [];
+        return this.player.cells.map(c => ({ x: c.x, y: c.y, radius: c.radius }));
+    }
+
+    /**
+     * Returns background render data (food, viruses, massFood) for one map instance.
+     * Only needed for visualization — do not call during normal training steps.
+     */
+    getRenderBackground() {
+        return {
+            food: this.map.food.data.map(f => ({ x: f.x, y: f.y })),
+            viruses: this.map.viruses.data.map(v => ({ x: v.x, y: v.y, radius: v.radius })),
+            massFood: this.map.massFood.data.map(m => ({ x: m.x, y: m.y })),
+            map: { width: config.gameWidth, height: config.gameHeight }
+        };
+    }
 }
 
+RLGame.MAX_STEPS_PER_EPISODE = MAX_STEPS_PER_EPISODE;
 module.exports = RLGame;

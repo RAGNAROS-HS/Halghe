@@ -1,55 +1,136 @@
 # Halghe: Reinforcement Learning for Agar.io
 
-Welcome to the Reinforcement Learning (RL) initiative for **Halghe**, an open-source Agar.io clone. This document outlines our plan for training intelligent agents to play Agar.io using modern Deep Reinforcement Learning techniques.
+An open-source Agar.io clone with a deep RL training layer. Agents are trained using an Actor-Critic algorithm against an isolated Node.js game server.
 
-## Current State
+---
 
-We have established a foundational bridge between the Halghe server and a Python-based RL training setup:
+## Architecture
 
-- **Batched Environment API**: The Node.js game server has been extended with a batched HTTP API (`POST /rl/reset_batch`, `POST /rl/step_batch`). This enables us to control and step multiple agents synchronously, vastly speeding up experience gathering.
-- **Gymnasium Wrapper (`BatchedHalgheEnv`)**: A custom vector-like environment in Python (`rl/vec_env.py`) that interacts with the server. It supports updating `num_agents` (e.g., 100 simultaneously) and abstracts the network calls.
-- **Action Space**: We use a continuous 4-dimensional action space for each agent: `[dx, dy, split, fire]`.
-    - `dx`, `dy`: Directional vectors for movement (clamped between -1 and 1).
-    - `split`: Triggers the cell split mechanic if `> 0`.
-    - `fire`: Triggers the mass ejection mechanic if `> 0`.
-- **Rendering & Video Recording**: Built-in 2D Pygame visualizer that renders the game state to an RGB array, wrapped with Gym's `RecordVideo` to automatically capture training progress.
-- **Training Scaffold (`train.py`)**: A basic loop for initializing the environment and stepping through episodes.
+```
+┌─────────────────────────────────┐        HTTP (JSON)        ┌──────────────────────────────┐
+│  Python (rl/)                   │ ◄───────────────────────► │  Node.js server              │
+│                                 │                            │                              │
+│  train.py        ← entry point  │  POST /rl/reset_batch      │  src/server/rl-api.js        │
+│  vec_env.py      ← Gym wrapper  │  POST /rl/step_batch       │  src/server/rl-game.js       │
+│                                 │  GET  /rl/render_state     │  src/server/game-logic.js    │
+└─────────────────────────────────┘  GET  /rl/config          └──────────────────────────────┘
+```
 
-## What We Plan To Implement
+- **`rl/train.py`** — training entry point. Actor-Critic (policy gradient + value baseline). Run this.
+- **`rl/vec_env.py`** — `BatchedHalgheEnv`: Gymnasium-compatible wrapper; manages N agents over a single HTTP connection. Not run directly.
+- **`src/server/rl-api.js`** — Express router exposing the RL endpoints.
+- **`src/server/rl-game.js`** — isolated per-agent game instance (no multiplayer state).
 
-### 1. Robust Observation Space (`_build_observation`)
-Currently, agents receive a blank state. Agar.io presents a challenge where the number of entities (food, viruses, players, ejected mass) varies dynamically. We plan to implement one (or a hybrid) of the following representations:
-- **Raycasting (Lidar-style)**: Casting rays in 360 degrees and returning the distance and type of the first intersecting object on each ray.
-- **Grid-based Spatial Maps**: Discretizing the local viewport around the agent into a 2D grid/image with different channels for entity types (food channel, enemy channel, etc.), suitable for Convolutional Neural Networks (CNNs).
-- **Entity Lists + Attention**: Using an embedding model to process lists of the $k$-nearest objects and their relative velocities/masses with a Transformer/Attention-based network.
+---
 
-### 2. Reward Shaping
-A carefully crafted reward function is crucial to prevent the agent from getting stuck in local optima (e.g., just surviving by doing nothing). 
-- **Dense Rewards**: Small positive rewards for consuming food pellets (`+Δ mass`).
-- **Sparse Rewards**: Large positive rewards for successfully eating another player. Large negative penalties for being eaten.
-- **Penalties**: Slight penalties for prolonged inactivity or running out of bounds.
+## How to Run
 
-### 3. Agent Modeling & RL Algorithm
-- **Deep RL Algorithm**: Given our continuous observation/action spaces and high degree of parallelization (batched environment), **Proximal Policy Optimization (PPO)** is our primary candidate. It scales exceptionally well with vector environments and provides stable training.
-- **Model Architecture (TensorFlow/Keras)**:
-    - **Actor-Critic**: The network will have one head outputting the policy (action probabilities/means) and another head outputting the state value (critic).
-    - Depending on the chosen observation space, the feature extractor will use generic dense layers, CNNs, or self-attention blocks.
+### 1. Start the game server
 
-### 4. Curriculum Learning and Self-Play
-Training an agent from scratch directly against highly skilled opponents is too difficult.
-- **Phase 1 (Foraging)**: Start training agents in environments with only food and viruses to master movement, size management, and splitting.
-- **Phase 2 (Basic Combat)**: Introduce rule-based bots to teach the agent basic evasion and hunting strategies.
-- **Phase 3 (Self-Play)**: Agents train against past versions of themselves. This dynamic environment prevents overfitting to static bot behaviors and naturally escalates the complexity of strategies (e.g., baiting with mass, cooperative splitting).
+```bash
+npm start
+```
 
-## How to Run the Current Setup
+This starts the Node.js server on `http://localhost:3000` and mounts the RL API.
 
-1. **Start the game server with the RL endpoints API mounted.**
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r rl/requirements.txt
-   ```
-3. **Run the training scaffold:**
-   ```bash
-   python rl/train.py
-   ```
-4. **Check the outputs:** Rendered videos of episodes can be viewed in the `videos` directory.
+### 2. Install Python dependencies
+
+```bash
+pip install -r rl/requirements.txt
+```
+
+### 3. Run training
+
+```bash
+cd rl
+python train.py
+```
+
+All hyperparameters are configurable via CLI:
+
+```
+--num-agents    INT    Parallel agents per episode          (default: 100)
+--episodes      INT    Number of training episodes          (default: 500)
+--max-steps     INT    Max env steps per episode            (default: 2000)
+--frame-skip    INT    Server ticks per action              (default: 4)
+--actor-lr      FLOAT  Actor learning rate                  (default: 0.001)
+--critic-lr     FLOAT  Critic learning rate                 (default: 0.001)
+--stddev-start  FLOAT  Initial exploration noise            (default: 0.2)
+--stddev-end    FLOAT  Final exploration noise (decays to)  (default: 0.05)
+--gamma         FLOAT  Discount factor                      (default: 0.99)
+--server-url    STR    Game server URL                      (default: http://localhost:3000)
+--log-dir       STR    TensorBoard log directory            (default: logs/train)
+--video-dir     STR    Video output directory               (default: videos/train_runs_batched)
+```
+
+Example — quick smoke test:
+
+```bash
+python train.py --episodes 5 --max-steps 200 --num-agents 10
+```
+
+### 4. Monitor training
+
+```bash
+tensorboard --logdir logs/train
+```
+
+Metrics logged per episode: `reward/avg_per_agent`, `loss/actor`, `loss/critic`, `exploration/stddev`.
+
+### 5. Watch recorded videos
+
+Episode videos are saved every 10 episodes to `rl/videos/train_runs_batched/`.
+
+---
+
+## Observation & Action Spaces
+
+| | Space | Shape | Description |
+|---|---|---|---|
+| **Observation** | `Box(-inf, inf)` | `(num_agents, 6)` | `[px, py, mass, food_dx, food_dy, num_enemies]` — all normalized |
+| **Action** | `Box(-1, 1)` | `(num_agents, 4)` | `[dx, dy, split, fire]` |
+
+- `dx`, `dy`: movement direction, clamped to `[-1, 1]`
+- `split`: split all cells if `> 0`
+- `fire`: eject mass from all cells if `> 0`
+
+---
+
+## Training Algorithm
+
+**Actor-Critic** (on-policy, episode-level updates):
+
+1. Collect a full episode of trajectories across all N agents
+2. Compute discounted returns `G_t` with `γ = 0.99`
+3. Normalize returns (zero-mean, unit-variance within the batch)
+4. **Critic** minimizes MSE loss: `(G_t - V(s_t))²`
+5. **Actor** maximizes log-probability weighted by advantage: `-E[log π(a|s) · (G_t - V(s_t))]`
+   - Log-probability uses the full Gaussian formula including the normalization constant
+6. Exploration noise `σ` linearly decays from `stddev-start` → `stddev-end`
+
+---
+
+## Reward Function
+
+| Event | Reward |
+|---|---|
+| Eating food or mass | `+Δ mass` (only deliberate gain; passive decay is cancelled out) |
+| Being eaten / dying | `−max(mass × 0.5, 10)` (scales with accumulated mass) |
+
+---
+
+## Roadmap
+
+### Phase 1 — Foraging (current)
+Single-agent environments with food and viruses. Goal: learn movement, size management, splitting.
+
+### Phase 2 — Basic Combat
+Add rule-based bots. Goal: learn evasion and hunting strategies.
+
+### Phase 3 — Self-Play
+Agents train against past versions of themselves. Goal: emergent strategies (baiting, cooperative splitting).
+
+### Future Observation Improvements
+- **Raycasting**: lidar-style rays returning distance + entity type
+- **Grid maps**: local 2D grid with separate channels per entity type (CNN-friendly)
+- **Entity lists + Attention**: k-nearest objects with relative velocities processed by a Transformer
