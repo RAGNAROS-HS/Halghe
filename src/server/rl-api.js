@@ -1,15 +1,13 @@
 /*
  * rl-api.js — Express router exposing the RL training API.
  *
- * POST /rl/reset        → reset episode, return initial state (single agent)
- * POST /rl/step         → apply action, tick once, return {state, reward, done, info}
  * POST /rl/reset_batch  → reset N episodes, return slim {obs, info} per agent
  * POST /rl/step_batch   → step N agents, return slim {obs, reward, done, info} per agent
  * GET  /rl/render_state → on-demand full state for visualization (agent 0 + all cells)
  * GET  /rl/config       → return game configuration
  *
- * Slim format: observations are pre-computed on the server to avoid transmitting
- * full game state (food arrays, virus arrays, etc.) over HTTP every step.
+ * Observations are pre-computed on the server to avoid transmitting full game
+ * state (food arrays, virus arrays, etc.) over HTTP every step.
  * Full state serialization only happens on the /render_state endpoint.
  */
 
@@ -22,33 +20,21 @@ const RLGame = require('./rl-game');
 let games = [new RLGame()];
 
 /**
- * POST /rl/reset
- * Body: (none required)
- * Response: { state, info }
+ * Normalize an action from either array [dx, dy, split, fire] or object format.
+ * Clamps continuous values to [-1, 1] and converts discrete flags to 0/1.
  */
-router.post('/reset', (req, res) => {
-    try {
-        const result = games[0].reset();
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-/**
- * POST /rl/step
- * Body: { action: { dx, dy, split, fire } }
- * Response: { state, reward, done, info }
- */
-router.post('/step', (req, res) => {
-    try {
-        const action = req.body.action || {};
-        const result = games[0].step(action);
-        res.json(result);
-    } catch (err) {
-        res.status(400).json({ error: err.message });
-    }
-});
+function normalizeAction(raw) {
+    const dx    = Array.isArray(raw) ? raw[0] : (raw.dx    ?? 0);
+    const dy    = Array.isArray(raw) ? raw[1] : (raw.dy    ?? 0);
+    const split = Array.isArray(raw) ? raw[2] : (raw.split ?? 0);
+    const fire  = Array.isArray(raw) ? raw[3] : (raw.fire  ?? 0);
+    return {
+        dx:    Math.max(-1, Math.min(1, dx    || 0)),
+        dy:    Math.max(-1, Math.min(1, dy    || 0)),
+        split: split > 0 ? 1 : 0,
+        fire:  fire  > 0 ? 1 : 0,
+    };
+}
 
 /**
  * POST /rl/reset_batch
@@ -101,14 +87,7 @@ router.post('/step_batch', (req, res) => {
                 game.reset();
             }
 
-            // Accept both array [dx, dy, split, fire] and object {dx, dy, split, fire}
-            const raw = actions[i];
-            const act = Array.isArray(raw) ? {
-                dx: raw[0],
-                dy: raw[1],
-                split: raw[2] > 0 ? 1 : 0,
-                fire: raw[3] > 0 ? 1 : 0
-            } : raw;
+            const act = normalizeAction(actions[i]);
 
             let totalReward = 0;
             let done = false;
@@ -164,6 +143,7 @@ router.get('/render_state', (req, res) => {
  */
 router.get('/config', (req, res) => {
     const config = require('../../config');
+    const RLGame = require('./rl-game');
     res.json({
         gameWidth: config.gameWidth,
         gameHeight: config.gameHeight,
@@ -176,6 +156,9 @@ router.get('/config', (req, res) => {
         slowBase: config.slowBase,
         massLossRate: config.massLossRate,
         minMassLoss: config.minMassLoss,
+        max_steps_per_episode: RLGame.MAX_STEPS_PER_EPISODE,
+        obs_dim: 6,
+        action_dim: 4,
     });
 });
 

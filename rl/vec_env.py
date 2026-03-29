@@ -39,12 +39,29 @@ class BatchedHalgheEnv(gymnasium.Env):
         self.single_action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(num_agents, 4), dtype=np.float32)
 
-        self.single_observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+        self.single_observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(num_agents, 5), dtype=np.float32)
 
         # Pygame rendering state
         self.window_size = 800
         self._surface = None
+        self._pygame_initialized = False
+
+    def _request(self, method: str, path: str, **kwargs):
+        """Thin wrapper around requests with a timeout and descriptive errors."""
+        url = f"{self.server_url}{path}"
+        try:
+            resp = getattr(self._session, method)(url, timeout=30, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as e:
+            raise EnvironmentError(f"Server request failed ({method.upper()} {url}): {e}") from e
+
+    def _ensure_pygame(self):
+        """Initialize Pygame exactly once."""
+        if not self._pygame_initialized:
+            pygame.init()
+            self._pygame_initialized = True
 
     def reset(
         self,
@@ -53,11 +70,7 @@ class BatchedHalgheEnv(gymnasium.Env):
         options: Optional[Dict[str, Any]] = None,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         super().reset(seed=seed)
-        resp = self._session.post(
-            f"{self.server_url}/rl/reset_batch",
-            json={"num_agents": self.num_agents}
-        )
-        resp.raise_for_status()
+        resp = self._request("post", "/rl/reset_batch", json={"num_agents": self.num_agents})
         data_list = resp.json()
 
         obs = np.array([d["obs"] for d in data_list], dtype=np.float32)
@@ -74,11 +87,10 @@ class BatchedHalgheEnv(gymnasium.Env):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
         # Send actions as a 2-D list — avoids creating 100 dict objects per step.
         # Node.js accepts both array [dx, dy, split, fire] and object {dx, dy, split, fire}.
-        resp = self._session.post(
-            f"{self.server_url}/rl/step_batch",
+        resp = self._request(
+            "post", "/rl/step_batch",
             json={"actions": actions.tolist(), "skip": self.frame_skip},
         )
-        resp.raise_for_status()
         data_list = resp.json()
 
         obs = np.array([d["obs"] for d in data_list], dtype=np.float32)
@@ -101,8 +113,7 @@ class BatchedHalgheEnv(gymnasium.Env):
         if self.render_mode != "rgb_array":
             return None
 
-        resp = self._session.get(f"{self.server_url}/rl/render_state")
-        resp.raise_for_status()
+        resp = self._request("get", "/rl/render_state")
         data = resp.json()
 
         render_bg = data.get("render_bg")
@@ -112,7 +123,7 @@ class BatchedHalgheEnv(gymnasium.Env):
             return None
 
         if self._surface is None:
-            pygame.init()
+            self._ensure_pygame()
             self._surface = pygame.Surface((self.window_size, self.window_size))
 
         self._surface.fill((255, 255, 255))
@@ -149,6 +160,10 @@ class BatchedHalgheEnv(gymnasium.Env):
         return np.transpose(np.array(pygame.surfarray.pixels3d(self._surface)), axes=(1, 0, 2))
 
     def close(self):
-        if self._surface is not None:
-            pygame.quit()
-        super().close()
+        try:
+            if self._pygame_initialized:
+                pygame.quit()
+                self._pygame_initialized = False
+                self._surface = None
+        finally:
+            super().close()
