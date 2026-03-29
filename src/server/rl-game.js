@@ -259,6 +259,51 @@ class RLGame {
             map: { width: config.gameWidth, height: config.gameHeight }
         };
     }
+
+    // ------------------------------------------------------------------
+    // Efficient observation and render helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns the 5-element observation vector, computed directly on the server
+     * to avoid transmitting the full game state over HTTP.
+     * [px, py, pmass, num_food, num_enemies] — all normalized.
+     */
+    getObservation() {
+        if (this.done || !this.player || this.player.cells.length === 0) {
+            return [0.0, 0.0, 0.0, 0.0, 0.0];
+        }
+        const c = this.player.cells[0];
+        return [
+            c.x / config.gameWidth,
+            c.y / config.gameHeight,
+            c.mass / 100.0,
+            this.map.food.data.length / 100.0,
+            0.0  // no enemies in current RL setup
+        ];
+    }
+
+    /**
+     * Returns compact cell data for all of this agent's cells.
+     * Used only for rendering — do not call during normal training steps.
+     */
+    getPlayerCells() {
+        if (!this.player || this.player.cells.length === 0) return [];
+        return this.player.cells.map(c => ({ x: c.x, y: c.y, radius: c.radius }));
+    }
+
+    /**
+     * Returns background render data (food, viruses, massFood) for one map instance.
+     * Only needed for visualization — do not call during normal training steps.
+     */
+    getRenderBackground() {
+        return {
+            food: this.map.food.data.map(f => ({ x: f.x, y: f.y })),
+            viruses: this.map.viruses.data.map(v => ({ x: v.x, y: v.y, radius: v.radius })),
+            massFood: this.map.massFood.data.map(m => ({ x: m.x, y: m.y })),
+            map: { width: config.gameWidth, height: config.gameHeight }
+        };
+    }
 }
 
 module.exports = RLGame;
